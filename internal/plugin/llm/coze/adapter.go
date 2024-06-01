@@ -13,7 +13,103 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/json"
+	"os"
 )
+
+type Config struct {
+    Models map[string][]ModelConfig `json:"models"`
+}
+
+type ModelConfig struct {
+    Cookie     string `json:"cookie"`
+    Model      string `json:"model"`
+    Used       int    `json:"used"`
+    StartTime  int64  `json:"start_time"`
+    Lock       int    `json:"lock"`
+}
+
+var configMutex = &sync.Mutex{}
+
+func readConfig() (Config, error) {
+    configMutex.Lock()
+    defer configMutex.Unlock()
+
+    var config Config
+    configFile, err := os.ReadFile("config.json")
+    if err != nil {
+        return config, err
+    }
+
+    err = json.Unmarshal(configFile, &config)
+    return config, err
+}
+
+func updateConfig(config Config) error {
+    configMutex.Lock()
+    defer configMutex.Unlock()
+
+    configFile, err := json.MarshalIndent(config, "", "  ")
+    if err != nil {
+        return err
+    }
+
+    return os.WriteFile("config.json", configFile, 0644)
+}
+
+func selectAndLockConfig(modelType string) (*ModelConfig, Config, error) {
+    config, err := readConfig()
+    if err != nil {
+        return nil, config, err
+    }
+
+    // This dynamically accesses the correct slice of configurations based on modelType
+    availableConfigs, ok := config.Models[modelType]
+    if !ok {
+        return nil, config, fmt.Errorf("model type %s not found in config", modelType)
+    }
+
+    var selectedConfig *ModelConfig
+    currentTime := time.Now().Unix()
+    oneDayInSeconds := int64(86400)
+
+    for i := range availableConfigs {
+        if availableConfigs[i].Used > 50 {
+            continue // Skip this configuration because it's been used more than 50 times.
+        }
+
+        if currentTime-availableConfigs[i].StartTime > oneDayInSeconds {
+            // More than 1 day has passed since start_time, reset start_time and used count.
+            availableConfigs[i].StartTime = currentTime
+            availableConfigs[i].Used = 0
+        }
+
+        if availableConfigs[i].Lock == 0 {
+            availableConfigs[i].Lock = 1 // Lock the configuration
+            availableConfigs[i].Used++   // Increment the used count
+            selectedConfig = &availableConfigs[i]
+            break
+        }
+		if availableConfigs[i].Lock == 1 {
+            availableConfigs[i].Lock = 1 // Lock the configuration
+            availableConfigs[i].Used++   // Increment the used count
+            selectedConfig = &availableConfigs[i]
+            break
+        }
+    }
+
+    if selectedConfig == nil {
+        return nil, config, nil // No available configuration
+    }
+
+    err = updateConfig(config)
+    if err != nil {
+        return nil, config, err
+    }
+
+    return selectedConfig, config, nil
+}
+
 
 var (
 	Adapter = API{}
@@ -84,28 +180,20 @@ func (API) Completion(ctx *gin.Context) {
 		completion = common.GetGinCompletion(ctx)
 		matchers   = common.GetGinMatchers(ctx)
 	)
-	switch completion.Model {
-		case "gpt-3.5-turbo":
-			//model = "coze/7372633086053482504-1716578081-2"
-			completion.Model = "coze/7372633086053482504-7372633764939366401-2-o"
-			break
-		case "gpt-4o":
-			//model = "coze/7372633086053482504-1716578081-2"
-			completion.Model = "coze/7372633086053482504-7372633764939366401-2-o"
-			break
-		case "gpt-4":
-			//model = "coze/7372646846499487751-1716578547-2"
-			completion.Model = "coze/7372646846499487751-7372633764939366401-2-o"
-			break
-		case "gpt-4-turbo":
-			//model = "coze/7372648254925930514-1716579154-2"
-			completion.Model = "coze/7372648254925930514-7372633764939366401-2-o"
-			break
-		case "gemini-1.5-pro-lastest":
-			//model = "coze/7372931363038625800-1716644517-2"
-			completion.Model = "coze/7372931363038625800-7372633764939366401-2-o"
-			break
-	}
+	modelType := completion.Model
+	selectedConfig, config, err := selectAndLockConfig(modelType)
+    if err != nil {
+        logger.Error(err)
+        response.Error(ctx, -1, err.Error())
+        return
+    }
+
+    if selectedConfig == nil {
+        response.Error(ctx, -1, "No available configuration for model "+modelType)
+        return
+    }
+	cookie = selectedConfig.Cookie
+    completion.Model = selectedConfig.Model
 	if plugin.NeedToToolCall(ctx) {
 		if completeToolCalls(ctx, cookie, proxies, completion) {
 			return
@@ -185,6 +273,12 @@ func (API) Completion(ctx *gin.Context) {
 		rmLock(botId)
 		logger.Infof("构建完成解锁：%s", botId)
 	}
+	
+	selectedConfig.Lock = 0
+	if err := updateConfig(config); err != nil {
+        logger.Error(err)
+        // Handle error (optional)
+    }
 
 	if err != nil {
 		logger.Error(err)
