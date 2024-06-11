@@ -168,6 +168,36 @@ func migrateData(client *mongo.Client) error {
 	// 	// }
 	// }
 
+	for modelType, configs: = range jsonConfig.Models {
+	    for _, config: = range configs {
+	        // Check if this model has been imported
+	        count, err: = collection.CountDocuments(ctx, bson.M {
+	            "modeltype": modelType,
+	            "configs.model": config.Model
+	        })
+	        if err != nil {
+	            return err
+	        }
+
+	        // If not imported, import it
+	        if count == 0 {
+	            newConfig: = NewConfig {
+	                ID: primitive.NewObjectID(),
+	                ModelType: modelType,
+	                Configs: [] ModelConfig {
+	                    config
+	                }, // Insert each config array
+	            }
+
+	                _,
+	            err: = collection.InsertOne(ctx, newConfig)
+	            if err != nil {
+	                return err
+	            }
+	        }
+	    }
+	}
+	
 	return nil
 }
 
