@@ -170,7 +170,7 @@ func migrateData(client *mongo.Client) error {
 	for modelType, configs := range jsonConfig.Models {
 		for _, config := range configs {
 			// Check if this model has been imported
-			count, err := collection.CountDocuments(ctx, bson.M{"modeltype": modelType, "configs.model": config.Model})
+			count, err := collection.CountDocuments(ctx, bson.M{"modelType": modelType, "configs.model": config.Model})
 			if err != nil {
 				return err
 			}
