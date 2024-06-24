@@ -67,11 +67,11 @@ func selectAndLockConfig(modelType string) (*ModelConfig, error) {
 		"configs.lock": 0,
 		"$or": []bson.M{
 			{
-				"configs.used": bson.M{"$lte": 30},
+				"configs.used": bson.M{"$lte": 15},
 				"configs.start_time": bson.M{"$lt": currentTime - 172800},
 			},
 			{
-				"configs.used": bson.M{"$lt": 30},
+				"configs.used": bson.M{"$lt": 15},
 				"configs.start_time": bson.M{"$gte": currentTime - 172800},
 			},
 		},
