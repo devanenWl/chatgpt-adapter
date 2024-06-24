@@ -309,21 +309,6 @@ func (API) Completion(ctx *gin.Context) {
 	cookie = selectedConfig.Cookie
     completion.Model = selectedConfig.Model
 
-	selectedConfig, err := selectAndLockConfig(completion.Model)
-    if err != nil {
-        logger.Error(err)
-        response.Error(ctx, -1, err.Error())
-        return
-    }
-
-    if selectedConfig == nil {
-        response.Error(ctx, -1, "No available configuration for model "+completion.Model)
-        return
-    }
-
-	cookie = selectedConfig.Cookie
-    completion.Model = selectedConfig.Model
-
 	if plugin.NeedToToolCall(ctx) {
 		if completeToolCalls(ctx, cookie, proxies, completion) {
 			return
