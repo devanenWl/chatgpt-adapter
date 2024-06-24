@@ -54,7 +54,6 @@ func waitResponse(ctx *gin.Context, matchers []common.Matcher, cancel chan error
 			if err != nil {
 				logger.Error(err)
 				if response.NotSSEHeader(ctx) {
-					logger.Error(err)
 					response.Error(ctx, -1, err)
 				}
 				return
@@ -122,6 +121,37 @@ func mergeMessages(ctx *gin.Context, pad bool, max int, completion pkg.ChatCompl
 		}
 	}
 
+	var (
+		user      = ""
+		assistant = ""
+	)
+
+	{
+		keyv, ok := common.GetGinValue[pkg.Keyv[string]](ctx, vars.GinCharSequences)
+		if ok {
+			user = keyv.GetString("user")
+			assistant = keyv.GetString("assistant")
+		}
+
+		if user == "" {
+			user = "<|user|>"
+		}
+		if assistant == "" {
+			assistant = "<|assistant|>"
+		}
+	}
+
+	tor := func(r string) string {
+		switch r {
+		case "user":
+			return user
+		case "assistant":
+			return assistant
+		default:
+			return "<|" + r + "|>"
+		}
+	}
+
 	// 合并历史对话
 	iterator := func(opts struct {
 		Previous string
@@ -140,7 +170,8 @@ func mergeMessages(ctx *gin.Context, pad bool, max int, completion pkg.ChatCompl
 			if e != nil {
 				return nil, logger.WarpError(e)
 			}
-			opts.Buffer.WriteString(fmt.Sprintf("<|%s|>\n%s\n<|end|>", role, content))
+
+			opts.Buffer.WriteString(fmt.Sprintf("%s\n%s\n<|end|>", tor(role), content))
 			if condition(role) != condition(opts.Next) {
 				result = append(result, edge.BuildUserMessage(opts.Buffer.String()))
 				opts.Buffer.Reset()
@@ -155,7 +186,7 @@ func mergeMessages(ctx *gin.Context, pad bool, max int, completion pkg.ChatCompl
 				return
 			}
 
-			opts.Buffer.WriteString(fmt.Sprintf("<|%s|>\n%s\n<|end|>", role, opts.Message["content"]))
+			opts.Buffer.WriteString(fmt.Sprintf("%s\n%s\n<|end|>", tor(role), opts.Message["content"]))
 			return
 		}
 
@@ -166,7 +197,7 @@ func mergeMessages(ctx *gin.Context, pad bool, max int, completion pkg.ChatCompl
 			opts.Buffer.Reset()
 		}
 
-		opts.Buffer.WriteString(fmt.Sprintf("<|%s|>\n%s\n<|end|>", role, opts.Message["content"]))
+		opts.Buffer.WriteString(fmt.Sprintf("%s\n%s\n<|end|>", tor(role), opts.Message["content"]))
 		result = append(result, edge.BuildSwitchMessage(condition(role), opts.Buffer.String()))
 		return
 	}
@@ -188,7 +219,7 @@ func mergeMessages(ctx *gin.Context, pad bool, max int, completion pkg.ChatCompl
 		if message["author"] == "user" {
 			newMessages = append(newMessages[:pos], newMessages[pos+1:]...)
 			text = strings.TrimSpace(message["text"].(string))
-			text = strings.TrimLeft(text, "<|user|>")
+			text = strings.TrimLeft(text, tor("user"))
 			text = strings.TrimRight(text, "<|end|>")
 			break
 		}

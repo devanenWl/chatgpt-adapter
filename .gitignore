@@ -18,12 +18,15 @@
 /log/
 /images/
 /tmp/
+/plugins/
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
 # Go workspace file
 go.work
+simple_test.go
+cookies.txt
 
 # os system
 .DS_Store
