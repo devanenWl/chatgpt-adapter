@@ -421,12 +421,16 @@ func XmlFlags(ctx *gin.Context, req *pkg.ChatCompletion) []Matcher {
 				pos = len(req.Messages)
 			}
 
-			c := regexp.MustCompile(cmp, regexp.Compiled)
+			c, err := regexp.Compile(cmp, regexp.Compiled)
+			if err != nil {
+				logger.Warn("compile failed: "+cmp, err)
+				continue
+			}
 			for idx, message := range req.Messages {
 				if idx < pos && !message.Is("role", "system") {
-					replace, err := c.Replace(message.GetString("content"), value, -1, -1)
-					if err != nil {
-						logger.Warn("compile failed: "+cmp, err)
+					replace, e := c.Replace(message.GetString("content"), value, -1, -1)
+					if e != nil {
+						logger.Warn("compile failed: "+cmp, e)
 						continue
 					}
 					message["content"] = replace
@@ -545,6 +549,7 @@ func xmlFlagsToContents(ctx *gin.Context, messages []pkg.Keyv[interface{}]) (han
 			"pad",      // bing中使用的标记：填充引导对话，尝试避免道歉
 			"notebook", // notebook模式
 			"histories",
+			"char_sequences", // 角色序列映射
 			"tool",
 		})
 	)
@@ -671,6 +676,30 @@ func xmlFlagsToContents(ctx *gin.Context, messages []pkg.Keyv[interface{}]) (han
 					handles = append(handles, map[uint8]string{'v': str, 't': "histories"})
 					clean(content[node.index:node.end])
 				}
+				continue
+			}
+
+			// 角色序列映射
+			if node.t == XML_TYPE_X && node.tag == "char_sequences" {
+				var (
+					user      = ""
+					assistant = ""
+				)
+				if e, ok := node.attr["user"]; ok {
+					if o, k := e.(string); k {
+						user = o
+					}
+				}
+				if e, ok := node.attr["assistant"]; ok {
+					if o, k := e.(string); k {
+						assistant = o
+					}
+				}
+				ctx.Set(vars.GinCharSequences, pkg.Keyv[string]{
+					"user":      user,
+					"assistant": assistant,
+				})
+				clean(content[node.index:node.end])
 				continue
 			}
 
