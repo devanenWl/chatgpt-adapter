@@ -4,22 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/bincooo/chatgpt-adapter/internal/gin.handler/response"
-	"github.com/bincooo/chatgpt-adapter/internal/plugin"
-	"github.com/bincooo/chatgpt-adapter/logger"
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"strconv"
 	"strings"
-	"log"
 
 	"github.com/bincooo/chatgpt-adapter/internal/gin.handler/response"
+	"github.com/bincooo/chatgpt-adapter/internal/plugin"
 	"github.com/bincooo/chatgpt-adapter/logger"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -28,11 +25,11 @@ import (
 )
 
 type ModelConfig struct {
-	Cookie     string `bson:"cookie"`
-	Model      string `bson:"model"`
-	Used       int    `bson:"used"`
-    StartTime  int64  `bson:"start_time"`
-	Lock       int    `bson:"lock"`
+	Cookie    string `bson:"cookie"`
+	Model     string `bson:"model"`
+	Used      int    `bson:"used"`
+	StartTime int64  `bson:"start_time"`
+	Lock      int    `bson:"lock"`
 }
 
 type OldConfig struct {
@@ -62,21 +59,21 @@ func readConfig() (JSONConfig, error) {
 }
 
 func loadEnv() {
-    if os.Getenv("HEROKU") == "" {
-        err := godotenv.Load()
-        if err != nil {
-            log.Fatalf("Error loading .env file")
-        }
-    }
+	if os.Getenv("HEROKU") == "" {
+		err := godotenv.Load()
+		if err != nil {
+			log.Fatalf("Error loading .env file")
+		}
+	}
 }
 
 func connectToMongoDB() *mongo.Client {
-    uri := os.Getenv("MONGODB_URI")
-    client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
-    if err != nil {
-        log.Fatal(err)
-    }
-    return client
+	uri := os.Getenv("MONGODB_URI")
+	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return client
 }
 
 // func migrateData(client *mongo.Client) {
@@ -139,7 +136,7 @@ func migrateData(client *mongo.Client) error {
 					ModelType: modelType,
 					Configs:   []ModelConfig{config}, // Chèn từng mảng config
 				}
-			
+
 				_, err := collection.InsertOne(ctx, newConfig)
 				if err != nil {
 					return err
@@ -159,7 +156,7 @@ func migrateData(client *mongo.Client) error {
 	// 				ModelType: modelType,
 	// 				Configs:   []ModelConfig{config}, // Chèn từng mảng config
 	// 			}
-			
+
 	// 			_, err := collection.InsertOne(ctx, newConfig)
 	// 			if err != nil {
 	// 				return err
@@ -174,29 +171,29 @@ func migrateData(client *mongo.Client) error {
 	// 	// }
 	// }
 	for modelType, configs := range jsonConfig.Models {
-	        for _, config := range configs {
-	            // Check if this model has been imported
-				logger.Info("Test : ", modelType, " - ", config.Model)
-	            count, err := collection.CountDocuments(ctx, bson.M{"modelType": modelType, "configs.model": config.Model})
-	            if err != nil {
-	                return err
-	            }
-	
-	            // If not imported, import it
-	            if count == 0 {
-	                newConfig := NewConfig{
-	                    ID:        primitive.NewObjectID(),
-	                    ModelType: modelType,
-	                    Configs:   []ModelConfig{config}, // Insert each config array
+		for _, config := range configs {
+			// Check if this model has been imported
+			logger.Info("Test : ", modelType, " - ", config.Model)
+			count, err := collection.CountDocuments(ctx, bson.M{"modelType": modelType, "configs.model": config.Model})
+			if err != nil {
+				return err
 			}
-	            
-	                _, err := collection.InsertOne(ctx, newConfig)
-	                if err != nil {
-	                    return err
-	                }
-	            }
-	        }
-	    }
+
+			// If not imported, import it
+			if count == 0 {
+				newConfig := NewConfig{
+					ID:        primitive.NewObjectID(),
+					ModelType: modelType,
+					Configs:   []ModelConfig{config}, // Insert each config array
+				}
+
+				_, err := collection.InsertOne(ctx, newConfig)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -228,8 +225,8 @@ func Bind(port int, version, proxies string) {
 	addr := ":" + strconv.Itoa(port)
 	logger.Info(fmt.Sprintf("server start by http://0.0.0.0%s/v1", addr))
 	loadEnv()
-    client := connectToMongoDB()
-    migrateData(client)
+	client := connectToMongoDB()
+	migrateData(client)
 	if err := route.Run(addr); err != nil {
 		logger.Error(err)
 		os.Exit(1)
