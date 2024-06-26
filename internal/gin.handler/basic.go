@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"github.com/bincooo/chatgpt-adapter/internal/gin.handler/response"
+	"github.com/bincooo/chatgpt-adapter/internal/plugin"
+	"github.com/bincooo/chatgpt-adapter/logger"
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"strconv"
 	"strings"
+	"log"
 
 	"github.com/bincooo/chatgpt-adapter/internal/gin.handler/response"
 	"github.com/bincooo/chatgpt-adapter/logger"
@@ -217,6 +222,8 @@ func Bind(port int, version, proxies string) {
 	route.GET("/proxies/v1/models", models)
 	route.GET("/v1/models", models)
 	route.Static("/file/tmp/", "tmp")
+
+	route.Any("/socket.io/*any", gin.WrapH(plugin.IO.ServeHandler(nil)))
 
 	addr := ":" + strconv.Itoa(port)
 	logger.Info(fmt.Sprintf("server start by http://0.0.0.0%s/v1", addr))
