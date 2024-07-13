@@ -67,12 +67,12 @@ func selectAndLockConfig(modelType string) (*ModelConfig, error) {
 		"configs.lock": 0,
 		"$or": []bson.M{
 			{
-				"configs.used": bson.M{"$lte": 15},
+				"configs.used": bson.M{"$lt": 1},
 				"configs.start_time": bson.M{"$lt": currentTime - 172800},
 			},
 			{
-				"configs.used": bson.M{"$lt": 15},
-				"configs.start_time": bson.M{"$gte": currentTime - 172800},
+				"configs.used": bson.M{"$gte": 1},
+				"configs.start_time": bson.M{"$lt": currentTime - 172800},
 			},
 		},
 	}	
@@ -294,7 +294,7 @@ func (API) Completion(ctx *gin.Context) {
 		}
 	}
 
-	selectedConfig, err := selectAndLockConfig(completion.Model)
+	selectedConfig, err := selectAndLockConfig("coze")
     if err != nil {
         logger.Error(err)
         response.Error(ctx, -1, err.Error())
@@ -307,7 +307,17 @@ func (API) Completion(ctx *gin.Context) {
     }
 
 	cookie = selectedConfig.Cookie
+
+	var model_id string
+	switch completion.Model {
+		case "gpt-4o":
+			model_id = "1716293913"
+		case "gpt-4-turbo":
+			model_id = "133"
+	}
+
     completion.Model = selectedConfig.Model
+	
 
 	if plugin.NeedToToolCall(ctx) {
 		if completeToolCalls(ctx, cookie, proxies, completion) {
@@ -335,7 +345,7 @@ func (API) Completion(ctx *gin.Context) {
 
 	var lock *common.ExpireLock
 	if mode == 'o' {
-		l, e := draftBot(ctx, pMessages[0], chat, completion)
+		l, e := draftBot(ctx, pMessages[0], chat, completion, model_id)
 		if e != nil {
 			response.Error(ctx, e.Code, e.Err)
 			return
@@ -388,7 +398,7 @@ func (API) Completion(ctx *gin.Context) {
 }
 
 // return true 终止
-func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, completion pkg.ChatCompletion) (eLock *common.ExpireLock, emitErr *emit.Error) {
+func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, completion pkg.ChatCompletion, model_id string) (eLock *common.ExpireLock, emitErr *emit.Error) {
 	var system string
 	if systemMessage.Role == "system" {
 		system = systemMessage.Content
@@ -410,9 +420,13 @@ func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, comp
 		return nil, &emit.Error{Code: http.StatusTooManyRequests, Err: errors.New("too Many Requests")}
 	}
 
+	if model_id == "" {
+		model_id = value["model"].(string)
+	}
+	
 	logger.Infof("上锁成功：%s", botId)
 	if err = chat.DraftBot(common.GetGinContext(ctx), coze.DraftInfo{
-		Model:            value["model"].(string),
+		Model:            model_id,
 		TopP:             completion.TopP,
 		Temperature:      completion.Temperature,
 		MaxTokens:        completion.MaxTokens,
