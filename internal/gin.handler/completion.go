@@ -95,7 +95,7 @@ func completions(ctx *gin.Context) {
 	if !response.MessageValidator(ctx) {
 		return
 	}
-
+	completion.Model = "coze"
 	if !GlobalExtension.Match(ctx, completion.Model) {
 		response.Error(ctx, -1, fmt.Sprintf("model '%s' is not not yet supported", completion.Model))
 		return
