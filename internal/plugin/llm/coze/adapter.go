@@ -18,7 +18,147 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os"
+	"go.mongodb.org/mongo-driver/mongo"
+    "go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"log"
+	"context"
 )
+
+type Config struct {
+    Models map[string][]ModelConfig `json:"models"`
+}
+
+type ModelConfig struct {
+    ID         primitive.ObjectID `bson:"_id,omitempty"`
+    Cookie     string             `bson:"cookie"`
+    Model      string             `bson:"model"`
+    Used       int                `bson:"used"`
+    StartTime  int64              `bson:"start_time"` // Corrected to use `bson` tag
+    Lock       int                `bson:"lock"`
+}
+
+func connectToMongoDB() *mongo.Client {
+    uri := os.Getenv("MONGODB_URI")
+    client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(uri))
+    if err != nil {
+        log.Fatal(err)
+    }
+    return client
+}
+
+func selectAndLockConfig(modelType string) (*ModelConfig, error) {
+    client := connectToMongoDB()
+    defer func() {
+        if err := client.Disconnect(context.TODO()); err != nil {
+            log.Fatal(err)
+        }
+    }()
+
+    collection := client.Database("coze").Collection("bot")
+
+    // Debug print to check the modelType being queried
+    log.Printf("Attempting to select and lock config for modelType: %s\n", modelType)
+
+    currentTime := int64(time.Now().Unix())
+    filter := bson.M{
+		"modelType": modelType,
+		"configs.lock": 0,
+		"$or": []bson.M{
+			{
+				"configs.used": bson.M{"$lt": 1},
+				"configs.start_time": bson.M{"$lt": currentTime - 172800},
+			},
+			{
+				"configs.used": bson.M{"$gte": 1},
+				"configs.start_time": bson.M{"$lt": currentTime - 172800},
+			},
+		},
+	}	
+    update := bson.M{
+        "$inc": bson.M{"configs.$.used": 1},
+        "$set": bson.M{"configs.$.lock": 1},
+    }
+
+
+    opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+
+    var updatedDoc bson.M
+    err := collection.FindOneAndUpdate(context.TODO(), filter, update, opts).Decode(&updatedDoc)
+    if err != nil {
+        // Debug print to log the error if the document is not found or any other error occurs
+        log.Printf("Error finding or updating document: %v\n", err)
+        return nil, err
+    }
+
+    // Convert the BSON document to a JSON string for debugging
+    jsonDoc, err := bson.MarshalExtJSON(updatedDoc, false, false)
+    if err != nil {
+        log.Printf("Error marshalling BSON to JSON: %v\n", err)
+    } else {
+        // Debug print the JSON representation of the BSON document
+        log.Printf("Updated document in JSON format: %s\n", jsonDoc)
+    }
+
+    var selectedConfig ModelConfig
+    configs, ok := updatedDoc["configs"].(bson.A) // Sử dụng bson.A cho mảng
+    if !ok || len(configs) == 0 {
+        log.Println("No available configuration for model")
+        return nil, nil
+    }
+
+    for _, item := range configs {
+        config, ok := item.(bson.M)
+        if !ok {
+            continue
+        }
+        selectedConfig.ID = updatedDoc["_id"].(primitive.ObjectID)
+        if cookie, ok := config["cookie"].(string); ok {
+            selectedConfig.Cookie = cookie
+        }
+        if model, ok := config["model"].(string); ok {
+            selectedConfig.Model = model
+        }
+        if used, ok := config["used"].(int32); ok {
+            selectedConfig.Used = int(used)
+        }
+        if StartTime, ok := config["start_time"].(int64); ok {
+            selectedConfig.StartTime = int64(StartTime)
+        }
+        if lock, ok := config["lock"].(int32); ok {
+            selectedConfig.Lock = int(lock)
+        }
+		if currentTime-selectedConfig.StartTime > 172800 {
+            selectedConfig.Used = 1
+            selectedConfig.StartTime = currentTime
+            // Update the document with the reset used count and new start_time
+            if err := updateConfig(selectedConfig); err != nil {
+                log.Printf("Error updating config with reset used count: %v\n", err)
+            }
+        }
+        break
+    }
+	log.Printf("Start_time: %v\n", selectedConfig.StartTime)
+    return &selectedConfig, nil
+}
+
+func updateConfig(config ModelConfig) error {
+    client := connectToMongoDB()
+    defer func() {
+        if err := client.Disconnect(context.TODO()); err != nil {
+            log.Fatal(err)
+        }
+    }()
+
+    collection := client.Database("coze").Collection("bot")
+
+    filter := bson.M{"_id": config.ID, "configs.model": config.Model}
+    update := bson.M{"$set": bson.M{"configs.$": config}}
+    _, err := collection.UpdateOne(context.TODO(), filter, update)
+    return err
+}
 
 var (
 	Adapter = API{}
@@ -184,6 +324,30 @@ func (API) Completion(ctx *gin.Context) {
 		}
 	}
 
+	selectedConfig, err := selectAndLockConfig("coze")
+    if err != nil {
+        logger.Error(err)
+        response.Error(ctx, -1, err.Error())
+        return
+    }
+
+    if selectedConfig == nil {
+        response.Error(ctx, -1, "No available configuration for model "+completion.Model)
+        return
+    }
+
+	cookie = selectedConfig.Cookie
+
+	var model_id string
+	switch completion.Model {
+		case "gpt-4o":
+			model_id = "1716293913"
+		case "gpt-4-turbo":
+			model_id = "133"
+	}
+
+    completion.Model = selectedConfig.Model
+
 	pMessages, tokens, err := mergeMessages(ctx)
 	if err != nil {
 		logger.Error(err)
@@ -240,7 +404,7 @@ func (API) Completion(ctx *gin.Context) {
 
 	var lock *common.ExpireLock
 	if mode == 'o' {
-		l, e := draftBot(ctx, pMessages[0], chat, completion)
+		l, e := draftBot(ctx, pMessages[0], chat, completion, model_id)
 		if e != nil {
 			response.Error(ctx, e.Code, e.Err)
 			return
@@ -270,6 +434,10 @@ func (API) Completion(ctx *gin.Context) {
 		rmLock(botId)
 		logger.Infof("构建完成解锁：%s", botId)
 	}
+	selectedConfig.Lock = 0 
+    if err := updateConfig(*selectedConfig); err != nil {
+        logger.Error(err)
+    }
 
 	if err != nil {
 		logger.Error(err)
@@ -322,7 +490,7 @@ func websdkModel(ctx *gin.Context, proxies string, cookie string) (model string,
 }
 
 // return true 终止
-func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, completion pkg.ChatCompletion) (eLock *common.ExpireLock, emitErr *emit.Error) {
+func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, completion pkg.ChatCompletion, model_id string) (eLock *common.ExpireLock, emitErr *emit.Error) {
 	var system string
 	if systemMessage.Role == "system" {
 		system = systemMessage.Content
@@ -345,8 +513,11 @@ func draftBot(ctx *gin.Context, systemMessage coze.Message, chat coze.Chat, comp
 	}
 
 	logger.Infof("上锁成功：%s", botId)
+	if model_id == "" {
+		model_id = value["model"].(string)
+	}
 	if err = chat.DraftBot(common.GetGinContext(ctx), coze.DraftInfo{
-		Model:            value["model"].(string),
+		Model:            model_id,
 		TopP:             completion.TopP,
 		Temperature:      completion.Temperature,
 		MaxTokens:        completion.MaxTokens,

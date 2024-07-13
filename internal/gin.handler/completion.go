@@ -60,6 +60,7 @@ func messages(ctx *gin.Context) {
 	_ = ctx.Request.Body.Close()
 	matchers := common.NewMatchers()
 	ctx.Set(vars.GinCompletion, completion)
+	completion.Model = "coze"
 	ctx.Set(vars.GinMatchers, matchers)
 
 	if !GlobalExtension.Match(ctx, completion.Model) {

@@ -110,6 +110,7 @@ func (adapter ExtensionAdapter) Models() (models []Model) {
 
 func (adapter ExtensionAdapter) Completion(ctx *gin.Context) {
 	completion := common.GetGinCompletion(ctx)
+	completion.Model = "coze"
 	for _, extension := range adapter.Extensions {
 		if extension.Match(ctx, completion.Model) {
 			extension.Completion(ctx)
