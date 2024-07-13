@@ -1,0 +1,105 @@
+# 内部转发请求配置，0值为无超时 单位为秒
+# connTimeout: 用户连接超时
+# idleConnTimeout: 空闲连接超时
+# responseHeaderTimeout: 响应头超时
+server-conn:
+  connTimeout: 0
+  idleConnTimeout: 0
+  responseHeaderTimeout: 0
+
+white-addr:
+#  - '127.0.0.1'
+#  - 'xxx.xxx.xxx.xxx'
+
+# 开启特殊标记增强
+flags: true
+
+# 图片访问
+domain: "http://127.0.0.1:8080"
+
+# 内调llm，用于绘图时文本转tags
+llm:
+  baseUrl: "http://127.0.0.1:8081"
+  model: "bing"
+  token: "xxx"
+
+# lmsys fn、 trigger
+lmsys: [49 , 109]
+
+# hf 绘图接口配置化
+hf:
+#  dalle-4k: https://mukaist-dalle-4k.hf.space
+#  animagine-xl-3.1: https://cagliostrolab-animagine-xl-3-1.hf.space
+#  dalle-3-xl: https://ehristoforu-dalle-3-xl-lora-v2.hf.space
+
+# gemini 自定义安全设置
+google:
+#  safes:
+#    - category: HARM_CATEGORY_HARASSMENT
+#      threshold: BLOCK_NONE
+
+bing:
+  baseUrl: "https://edgeservices.bing.com/edgesvc"
+
+claude:
+  pad: 0
+  cookies:
+    - 'xxx1'
+    - 'xxx2'
+
+you:
+  helper: 8082
+  notice: "Creative Writing Mode"
+  cookies:
+    - 'xxx1'
+    - 'xxx2'
+serverless:
+  enabled: false
+  disabled-gpu: true
+  # 当无法找到指定的浏览器时可以在此配置路径
+  # execPath: /usr/bin/microsoft-edge
+  headless: new
+
+# coze 默认配置；；；内置配置经常变动，难以维护改为配置化。新增webSdk模式，但还未得知速率是否有限制？？？
+coze:
+#  8k:
+#    botId: 114514
+#    version: 9527
+#    scene: 2
+#    isW: false
+#  128k:
+#    botId: 114514
+#    version: 9527
+#    scene: 2
+#    isW: false
+#  images:
+#    botId: 114514
+#    version: 9527
+#    scene: 2
+
+# 多个websdk账号可开启，用于请求计数，超过count数量该账号进入静置区
+  websdk-counter: 0
+  websdk:
+#    - email: xxx@gmail.com
+#      password: xxx
+#      validate: xxx@gmail.com
+
+interpreter:
+  baseUrl: http://127.0.0.1:8000
+  echoCode: false
+  ws: true
+
+custom-llm:
+  baseUrl: http://127.0.0.1:8080
+
+# toolCall 默认配置化; 在 flags 关闭时也可用
+toolCall:
+  id: -1
+  enabled: false
+  tasks: false
+
+# 图片放大，domain需要公网可访问的地址
+# key请到https://bigjpg.com获取，每月30次免费
+# 目前注册没有限制，可配置多个key轮询
+#magnify:
+#  - "xxx"
